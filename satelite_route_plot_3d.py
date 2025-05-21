@@ -79,6 +79,8 @@ for phi in rads*np.arange(-75, 90, 15):
     lat = re*np.vstack((cth*cph, sth*cph, zth+sph))
     lats.append(lat)
 
+
+
 if True:
     fig = plt.figure(figsize=[10, 8])  # [12, 10]
 
