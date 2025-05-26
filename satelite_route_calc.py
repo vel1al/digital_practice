@@ -39,9 +39,10 @@ C_a 2,1
 F_m / m_ка = alpha 0,02
 '''
 
+import json
 import numpy as np
 import matplotlib.pyplot as plt
-import json
+from datetime import datetime, timedelta
 
 C_a = 2.1
 alpha = 0.02
@@ -101,6 +102,71 @@ def calc_kepler_orbit(base_orbit, dots_count, simulating_angle=2 * np.pi):
 
     return [r, u]
 
+
+def julian_date(dt):
+    a = (14 - dt.month) // 12
+    y = dt.year + 4800 - a
+    m = dt.month + 12 * a - 3
+    return dt.day + (153 * m + 2) // 5 + 365 * y + y // 4 - y // 100 + y // 400 - 32045 + (
+                dt.hour - 12) / 24 + dt.minute / 1440 + dt.second / 86400
+
+
+def greenwich_sidereal_time(dt):
+    JD = julian_date(dt)
+    T = (JD - 2451545.0) / 36525.0
+
+    # Среднее звёздное время в градусах
+    GMST_deg = 280.46061837 + 360.98564736629 * (JD - 2451545.0) + 0.000387933 * T ** 2 - T ** 3 / 38710000
+
+    # Приведение к диапазону 0-360°
+    GMST_deg %= 360
+    return np.deg2rad(GMST_deg)
+
+def eci_to_geodetic(x, y, z, dt):
+    theta = greenwich_sidereal_time(dt)
+
+    x_rot = x * np.cos(theta) + y * np.sin(theta)
+    y_rot = -x * np.sin(theta) + y * np.cos(theta)
+    z_rot = z
+
+    r = np.sqrt(x_rot ** 2 + y_rot ** 2 + z_rot ** 2)
+    lon = np.atan2(y_rot, x_rot)
+    lat = np.asin(z_rot / r)
+
+    return np.degrees(lat), np.degrees(lon)
+
+def orbit_to_eci(p, e, O, i, w, u):
+    tetta = u - w
+
+    r = p / (1 + e * np.cos(tetta))
+    a = p / (1 - e ** 2)
+
+    x_orb = r * np.cos(tetta)
+    y_orb = r * np.sin(tetta)
+    z_orb = 0
+
+    R_w = np.array([
+        [np.cos(w), -np.sin(w), 0],
+        [np.sin(w), np.cos(w), 0],
+        [0, 0, 1]
+    ])
+
+    R_i = np.array([
+        [1, 0, 0],
+        [0, np.cos(i), -np.sin(i)],
+        [0, np.sin(i), np.cos(i)]
+    ])
+
+    R_O = np.array([
+        [np.cos(O), -np.sin(O), 0],
+        [np.sin(O), np.cos(O), 0],
+        [0, 0, 1]
+    ])
+
+    r_orb = np.array([x_orb, y_orb, z_orb])
+    r_eci = R_O @ R_i @ R_w @ r_orb
+
+    return r_eci
 
 def calc_osculating_orbits(base_orbit, logs_file_path, dots_count, b_earth_shape_disturbed=False, b_atmoshpere_disturbed=False, simulating_angle=2 * np.pi, log_periodicity = 1):
     du = simulating_angle / dots_count
@@ -186,16 +252,16 @@ def calc_osculating_orbits(base_orbit, logs_file_path, dots_count, b_earth_shape
 
 
 base_orbit = sub_orbit()
-base_orbit.setup(6663, 0.002, np.deg2rad(32.46), np.deg2rad(51.64), 0, 0)
+base_orbit.setup(10000, 0.3, np.deg2rad(32.46), np.deg2rad(70), 0, 0)
 
 def estimate_orbital_disturbances(dots_count):
-    b_recalc_orbit = False
+    b_recalc_orbit = True
 
     disturbed_orbits, disturbed_a_orbits, disturbed_g_orbits = [base_orbit], [base_orbit], [base_orbit]
     if (b_recalc_orbit):
         disturbed_orbits = calc_osculating_orbits(base_orbit, "disturbed_orbit_logs.txt", dots_count, True, True, simulating_angle=20 * np.pi)
-        disturbed_a_orbits = calc_osculating_orbits(base_orbit, "disturbed_a_orbit_logs.txt", dots_count, False, True, simulating_angle=20 * np.pi)
-        disturbed_g_orbits = calc_osculating_orbits(base_orbit, "disturbed_g_orbit_logs.txt", dots_count, True, False, simulating_angle=20 * np.pi)
+        #disturbed_a_orbits = calc_osculating_orbits(base_orbit, "disturbed_a_orbit_logs.txt", dots_count, False, True, simulating_angle=20 * np.pi)
+        #disturbed_g_orbits = calc_osculating_orbits(base_orbit, "disturbed_g_orbit_logs.txt", dots_count, True, False, simulating_angle=20 * np.pi)
     else:
         with open("disturbed_orbit_logs.txt", 'r') as fstream:
             while fstream:
@@ -235,8 +301,8 @@ def estimate_orbital_disturbances(dots_count):
     osculating_orbit = calc_osculating_orbits(base_orbit, "non_disturbed_orbit_logs.txt", 100000)
 
     disturbed_orbits_values = [[orbit.p, orbit.e, orbit.O, orbit.i, orbit.w, orbit.t_p] for orbit in disturbed_orbits]
-    disturbed_a_orbits_values = [[orbit.p, orbit.e, orbit.O, orbit.i, orbit.w, orbit.t_p] for orbit in disturbed_a_orbits]
-    disturbed_g_orbits_values = [[orbit.p, orbit.e, orbit.O, orbit.i, orbit.w, orbit.t_p] for orbit in disturbed_g_orbits]
+    #disturbed_a_orbits_values = [[orbit.p, orbit.e, orbit.O, orbit.i, orbit.w, orbit.t_p] for orbit in disturbed_a_orbits]
+    #disturbed_g_orbits_values = [[orbit.p, orbit.e, orbit.O, orbit.i, orbit.w, orbit.t_p] for orbit in disturbed_g_orbits]
     osculating_orbit_values = [[orbit.p, orbit.e, orbit.O, orbit.i, orbit.w, orbit.t_p] for orbit in osculating_orbit]
 
     dot_arg_2pi = np.linspace(0, 2 * np.pi, 100000)
@@ -255,11 +321,11 @@ def estimate_orbital_disturbances(dots_count):
     r_2, u_2 = r_2[:-1], u_2[:-1]
 
     disturbed_orbits_values = disturbed_orbits_values[:-1]
-    disturbed_a_orbits_values = disturbed_a_orbits_values[:-1]
-    disturbed_g_orbits_values = disturbed_g_orbits_values[:-1]
-    columns = list(zip(*disturbed_orbits_values))
-    columns_a = list(zip(*disturbed_a_orbits_values))
-    columns_g = list(zip(*disturbed_g_orbits_values))
+    # disturbed_a_orbits_values = disturbed_a_orbits_values[:-1]
+    # disturbed_g_orbits_values = disturbed_g_orbits_values[:-1]
+    # columns = list(zip(*disturbed_orbits_values))
+    # columns_a = list(zip(*disturbed_a_orbits_values))
+    # columns_g = list(zip(*disturbed_g_orbits_values))
 
 
     orbits_dict = ["фокальный параметр", "эксцентриситет", "долгота восходящего узла", "наклонение орбиты", "аргумент перицентра"]
@@ -286,8 +352,8 @@ def estimate_orbital_disturbances(dots_count):
     #
     # plt.figure(figsize=(18, 20))
     # plt.title("Оценка вековых изменений параметров орбиты")
-    # ax4 = plt.subplot(231, projection='polar')
-    # ax4.plot(dot_arg, r_dist, color='red', label='r')
+    ax4 = plt.subplot(231, projection='polar')
+    ax4.plot(dot_arg, r_dist, color='red', label='r')
     # ax4.grid(True)
     # ax4.legend()
     #
@@ -385,7 +451,7 @@ def estimate_orbital_disturbances(dots_count):
     #
     #     r_eci = R_O @ R_i @ R_w @ r_orb
     #
-    #     sun_vector = np.array([0, 0.2, 1])
+    #     sun_vector = np.array([0, 1, 0.5])
     #     pos_vector = r_eci / np.linalg.norm(r_eci)
     #
     #     angle = np.arccos(np.dot(sun_vector, pos_vector))
@@ -403,44 +469,104 @@ def estimate_orbital_disturbances(dots_count):
     # for x, y, z in lats:
     #     ax.plot(x, y, z, '-k', color='b')
 
+    plt.figure(figsize=(15, 7))
+    image = plt.imread('earth_map.jpg')
+    extent = [-180, 180, -90, 90]
+    plt.imshow(image, extent=extent)
+    plt.xlim(-180, 180)
+    plt.ylim(-90, 90)
+    plt.xlabel('Долгота (°)')
+    plt.ylabel('Широта (°)')
 
-
-    fig = plt.figure(figsize=[10, 8])
-    ax = fig.add_subplot(1, 1, 1)
-    for itter in range(1, 100000 - 1, 100):
+    start_time = datetime(2023, 1, 1, 0, 0, 0)
+    for itter in range(1, dots_count - 1, 100):
         orbit = disturbed_orbits[itter - 1]
         p, e, w, O, i, t_p = orbit.p, orbit.e, orbit.w, orbit.O, orbit.i, orbit.t_p
-        a = p / (1 - e ** 2)
+        eci = orbit_to_eci(p, e, O, i, w, dot_arg[itter])
+        t = start_time + timedelta(seconds=t_p)
+        lat, lon = eci_to_geodetic(eci[0], eci[1], eci[2], t)
 
-        E_O = 2 * np.arctan(- np.sqrt((1 - e)/(1 + e)) * np.tan(w/2))
-        M_O = E_O - e * np.sin(E_O)
-        n = np.sqrt(mu / a)
-        t_O = t_p + M_O / n
-        S_O = t_O * (1 + 0.0027379093)
-
-        dt_j = dot_arg[itter] / n
-        t_j = t_O + dt_j
-
-        w_earth = 7.292115e-5
-        phi_gc = np.arcsin(np.sin(i) * np.sin(dot_arg[itter]))
-        phi = phi_gc + 0.1921 * np.sin(2 * phi_gc)
-
-        lambda_O = O - S_O
-        dlambda = w_earth * np.sqrt((a ** 3)/mu) * M_O
-
-        da_j = 0
-        if 0 <= dot_arg[itter] <= np.pi / 2:
-            da_j = np.arcsin(np.tan(phi_gc)/np.tan(i))
-        if np.pi / 2 <= dot_arg[itter] <= (3 * np.pi) / 2:
-            da_j = np.pi - np.arcsin(np.tan(phi_gc) / np.tan(i))
-        if (3 * np.pi) / 2 <= dot_arg[itter] <= 2 * np.pi:
-            da_j = 2 * np.pi - np.arcsin(np.tan(phi_gc) / np.tan(i))
-
-        lambda_j = O + da_j - dlambda
-
-        print(phi, lambda_j)
-        ax.scatter(np.rad2deg(lambda_j), np.rad2deg(phi), color='r')
+        plt.scatter(lon, lat)
 
     plt.show()
+
+
+def calculate_power_generation(orbit_altitude_km, panel_area_m2, efficiency, mission_duration_minutes):
+    """
+    Рассчитывает циклограмму генерации энергии солнечными панелями на орбите
+
+    Параметры:
+    orbit_altitude_km - высота орбиты в км
+    panel_area_m2 - площадь солнечных панелей в м²
+    efficiency - КПД солнечных панелей (0-1)
+    mission_duration_minutes - продолжительность миссии в минутах
+    """
+    # Константы
+    EARTH_RADIUS_KM = 6371  # Радиус Земли в км
+    SUN_POWER_W_PER_M2 = 1361  # Солнечная постоянная (Вт/м²)
+
+    # Расчет параметров орбиты
+    orbit_radius_km = EARTH_RADIUS_KM + orbit_altitude_km
+    orbit_period_minutes = 2 * np.pi * np.sqrt((orbit_radius_km ** 3) / (398600.4418)) / 60
+
+    # Угол, при котором КА входит в тень Земли
+    shadow_angle = np.arcsin(EARTH_RADIUS_KM / orbit_radius_km)
+
+    # Время в тени и на свету (в минутах)
+    shadow_time_minutes = (2 * shadow_angle / (2 * np.pi)) * orbit_period_minutes
+    light_time_minutes = orbit_period_minutes - shadow_time_minutes
+
+    # Генерация временной шкалы
+    time_points = np.arange(0, mission_duration_minutes, 1)
+    power_output = np.zeros_like(time_points, dtype=float)
+
+    # Расчет мощности для каждого момента времени
+    for i, t in enumerate(time_points):
+        # Определяем положение на орбите (0 - в перигее, π - в апогее)
+        orbit_phase = (t % orbit_period_minutes) / orbit_period_minutes * 2 * np.pi
+
+        # Проверяем, находится ли КА в тени
+        if np.abs(orbit_phase - np.pi) < shadow_angle:
+            power_output[i] = 0  # В тени
+        else:
+            # На свету - полная мощность с учетом ориентации
+            # Упрощение: считаем, что панели всегда ориентированы на Солнце
+            power_output[i] = SUN_POWER_W_PER_M2 * panel_area_m2 * efficiency
+
+    # Построение графика
+    plt.figure(figsize=(12, 6))
+    plt.plot(time_points, power_output / 1000, label='Мощность (кВт)')
+
+    # Разметка графика
+    plt.title(f'Циклограмма генерации энергии на орбите {orbit_altitude_km} км\n'
+              f'Площадь панелей: {panel_area_m2} м², КПД: {efficiency * 100:.1f}%')
+    plt.xlabel('Время, мин')
+    plt.ylabel('Мощность, кВт')
+    plt.grid(True, which='both', linestyle='--', alpha=0.7)
+
+    # Добавляем отметки периодов
+    for t in np.arange(0, mission_duration_minutes, orbit_period_minutes):
+        plt.axvline(t, color='gray', linestyle=':', alpha=0.5)
+        plt.text(t, np.max(power_output) / 1000 * 0.95, f'{t:.0f} мин',
+                 ha='center', va='top', rotation=90, alpha=0.7)
+
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+    # Вывод информации об орбите
+    print(f"Период обращения: {orbit_period_minutes:.2f} минут")
+    print(f"Время на свету: {light_time_minutes:.2f} минут ({light_time_minutes / orbit_period_minutes * 100:.1f}%)")
+    print(f"Время в тени: {shadow_time_minutes:.2f} минут ({shadow_time_minutes / orbit_period_minutes * 100:.1f}%)")
+    print(f"Средняя мощность: {np.mean(power_output) / 1000:.2f} кВт")
+
+
+# Пример использования
+orbit_altitude_km = 400  # высота орбиты в км
+panel_area_m2 = 50  # площадь панелей в м²
+efficiency = 0.3  # КПД панелей
+mission_duration_minutes = 180  # продолжительность моделирования в минутах
+
+#calculate_power_generation(orbit_altitude_km, panel_area_m2, efficiency, mission_duration_minutes)
 
 estimate_orbital_disturbances(200000)
