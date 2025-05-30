@@ -39,7 +39,7 @@ n = 0.3 # кпд преобразования фотоэллектрически
 k = 0.07 # коэффициент деградации фотоэллектрических панелей (exp(процент кпд) за год)
 
 # входные данные
-a_0 = 10000 # большая полуось орбиты
+a_0 = 7500 # большая полуось орбиты
 i_0 = 63.4
 O_0 = 32.46
 w_0 = 0
@@ -57,10 +57,10 @@ p_0 = a_0 / (1 - e_0**2)
 base_orbit = sub_orbit()
 base_orbit.setup(p_0, e_0, np.deg2rad(O_0), np.deg2rad(i_0), w_0, 0) # заданная орбита движения
 
-atmosphere_h_cutoff = 500 # граничная высота расчёта влияния аэродинамического торможения
+atmosphere_h_cutoff = 1000 # граничная высота расчёта влияния аэродинамического торможения
 solar_angle_cutoff = np.pi / 2 # предельный угол падения солнечных лучей на фотоэлектрические панели
 rounds_count = 200 # количество витков для долгосрочного моделирования
-dots_per_round = 10000 # количество точек итерационного вычисления на один оборот
+dots_per_round = 50000 # количество точек итерационного вычисления на один оборот
 
 dots_count_long = dots_per_round * rounds_count # общее количество точек на долгосрочном моделировании
 dots_count_semi = dots_per_round * rounds_count // 10 # общее количество точек на краткосрочном моделировании
@@ -180,16 +180,16 @@ def calc_osculating_orbits(base_orbit, logs_file_path, dots_count, u_i, b_earth_
 
     def process_step(previous_orbit: sub_orbit, u):
         def runge_kutta_step(df, x_0, dt):
-            k_1 = dt * df(x_0)
-            k_2 = dt * df(x_0 + k_1 / 2)
-            k_3 = dt * df(x_0 + k_2 / 2)
-            k_4 = dt * df(x_0 + k_3)
+            k_1 = df(x_0)
+            k_2 = df(x_0 + k_1 / 2 * dt)
+            k_3 = df(x_0 + k_2 / 2 * dt)
+            k_4 = df(x_0 + k_3 * dt)
 
-            return (k_1 + 2 * k_2 + 2 * k_3 + k_4) / 6
+            return (k_1 + 2 * k_2 + 2 * k_3 + k_4) / 6 * dt
 
         p, e, O, i, w, t_p = previous_orbit.p, previous_orbit.e, previous_orbit.O, previous_orbit.i, previous_orbit.w, previous_orbit.t_p
         u_0 = u % (2 * np.pi)
-        theta = w - u_0 # угол истинной аномалии
+        theta = u_0 - u # угол истинной аномалии
 
         r = p / (1 + e * np.cos(theta))
         v = np.sqrt(p * mu * (1 + 2 * e * np.cos(theta) + e ** 2)) / p
@@ -308,7 +308,7 @@ if (b_recalc_orbit):
                                                     simulating_angle=angle_lim_short)
     disturbed_a_orbits = calc_osculating_orbits(base_orbit, "disturbed_a_orbit_logs.txt", dots_count_semi, dot_arg_semi, False, True,
                                                 simulating_angle=angle_lim_semi)
-    disturbed_g_orbits = calc_osculating_orbits(base_orbit, "disturbed_g_orbit_logs.txt", dots_count_semi, dot_arg_semi, True, False,
+    disturbed_g_orbits = calc_osculating_orbits(base_orbit, "disturbed_g_orbit_logs.txt", dots_count_semi, dot_arg_semi, True, True,
                                                 simulating_angle=angle_lim_semi)
 
 else:
@@ -373,7 +373,7 @@ def calculate_power_usage(sun_vector, T_0):
     for itter in range(1, dots_count_long, 10):
         orbit = disturbed_orbits_long[itter - 1]
         p, e, w, O, i, t_p = orbit.p, orbit.e, orbit.w, orbit.O, orbit.i, orbit.t_p
-        theta = w - dot_arg_long[itter] % (2 * np.pi)
+        theta = dot_arg_long[itter] % (2 * np.pi) - w
 
         r = p / (1 + e * np.cos(theta))
 
@@ -530,6 +530,8 @@ def estimate_orbital_disturbances():
         plt.grid(True)
         plt.legend()
 
+    plt.show()
+
 def plot_track():
     plt.figure(figsize=(15, 7))
     image = plt.imread('earth_map.jpg')
@@ -544,7 +546,7 @@ def plot_track():
     for itter in range(1, dots_count_short, 10):
         orbit = disturbed_orbits_short[itter - 1]
         p, e, w, O, i, t_p = orbit.p, orbit.e, orbit.w, orbit.O, orbit.i, orbit.t_p
-        theta = w - dot_arg_short[itter] % (2 * np.pi)
+        theta = dot_arg_short[itter] % (2 * np.pi) - w
 
         r = p / (1 + e * np.cos(theta))
 
@@ -594,7 +596,7 @@ def plot_orbit():
     for itter in range(1, dots_count_short, 10):
         orbit = disturbed_orbits_short[itter - 1]
         p, e, w, O, i = orbit.p, orbit.e, orbit.w, orbit.O, orbit.i
-        theta = w - dot_arg_short[itter] % (2 * np.pi)
+        theta = dot_arg_short[itter] % (2 * np.pi) - w
 
         r = p / (1 + e * np.cos(theta))
 
